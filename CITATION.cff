@@ -1,8 +1,8 @@
 cff-version: 1.2.0
 message: >-
-  If you use Skyline fMRI in your research, please cite this software and the
-  DIPY and FURY papers it is built on (listed under references).
-title: "Skyline fMRI: functional, structural and diffusion MRI visualization built on DIPY Skyline"
+  If you use Skyline fMRI in your research, please cite it, together with the
+  DIPY and FURY papers listed under references.
+title: "Skyline fMRI: functional, structural and diffusion MRI visualization"
 type: software
 authors:
   - family-names: Shah
@@ -13,38 +13,26 @@ license: BSD-3-Clause
 version: 0.1.0
 date-released: 2026-11-10
 abstract: >-
-  Skyline fMRI extends DIPY's Skyline viewer with BOLD time-series playback,
-  thresholded activation overlays, task GLM and seed-correlation analyses,
-  linking of white-matter tracts to activation clusters, 2D triplanar views
-  and high-resolution figure capture, in one GPU-accelerated scene with
-  anatomy, diffusion maps and tractography.
+  Skyline fMRI is an interactive, GPU-accelerated viewer that shows BOLD runs,
+  thresholded activation maps, anatomy, diffusion maps and tractography in one
+  scene. It plays BOLD time series, fits task GLMs and seed correlations,
+  links white-matter tracts to activation clusters, renders glass brains and
+  triplanar views, and exports figures at print resolution on white, black or
+  transparent backgrounds.
 keywords:
   - fMRI
   - diffusion MRI
   - tractography
+  - glass brain
   - visualization
   - neuroimaging
-  - DIPY
-  - FURY
 references:
   - type: article
     title: "DIPY, a library for the analysis of diffusion MRI data"
     authors:
       - family-names: Garyfallidis
         given-names: Eleftherios
-      - family-names: Brett
-        given-names: Matthew
-      - family-names: Amirbekian
-        given-names: Bagrat
-      - family-names: Rokem
-        given-names: Ariel
-      - family-names: van der Walt
-        given-names: Stefan
-      - family-names: Descoteaux
-        given-names: Maxime
-      - family-names: Nimmo-Smith
-        given-names: Ian
-      - name: "DIPY Contributors"
+      - name: "et al."
     journal: "Frontiers in Neuroinformatics"
     volume: 8
     start: 8
@@ -55,23 +43,7 @@ references:
     authors:
       - family-names: Garyfallidis
         given-names: Eleftherios
-      - family-names: Koudoro
-        given-names: Serge
-      - family-names: Guaje
-        given-names: Javier
-      - family-names: Côté
-        given-names: Marc-Alex
-      - family-names: Biswas
-        given-names: Soham
-      - family-names: Reagan
-        given-names: David
-      - family-names: Anousheh
-        given-names: Nasim
-      - family-names: Silva
-        given-names: Filipi
-      - family-names: Fox
-        given-names: Geoffrey
-      - name: "FURY Contributors"
+      - name: "et al."
     journal: "Journal of Open Source Software"
     volume: 6
     issue: 64
