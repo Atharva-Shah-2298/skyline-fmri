@@ -5,6 +5,7 @@ import numpy as np
 from dipy.utils.logging import logger
 from dipy.utils.optpkg import optional_package
 from skyline_fmri.UI.elements import color_picker, colors_equal, thin_slider
+from skyline_fmri._compat import contour_from_roi as smooth_contour_from_roi
 from skyline_fmri.render.renderer import Visualization, format_affine_info
 
 fury_trip_msg = (
@@ -103,6 +104,8 @@ class ROI3D(Visualization):
         RGB color of the contour surface, in ``[0, 1]``.
     render_callback : callable, optional
         Callback used to request a render/update.
+    smoothing : int, optional
+        Taubin smoothing passes of the contour; 0 keeps the voxel faces.
 
     Raises
     ------
@@ -119,6 +122,7 @@ class ROI3D(Visualization):
         opacity=100,
         color=(1, 0, 0),
         render_callback=None,
+        smoothing=0,
     ):
         """Initialize the ROI contour visualization.
 
@@ -137,6 +141,8 @@ class ROI3D(Visualization):
             RGB color of the contour surface, in ``[0, 1]``.
         render_callback : callable, optional
             Callback used to request a render/update.
+        smoothing : int, optional
+            Taubin smoothing passes of the contour; 0 keeps the voxel faces.
 
         Raises
         ------
@@ -157,6 +163,7 @@ class ROI3D(Visualization):
         self.affine = affine
         self.opacity = opacity
         self.color = color
+        self.smoothing = smoothing
         self._draft_color = color
         self._color_picker_open = False
         self._color_picker_popup_id = f"roi_color_picker_popup##{name}"
@@ -166,14 +173,29 @@ class ROI3D(Visualization):
     def _create_roi_actor(self):
         """Create the translucent contour actor for the ROI mask.
 
-        Builds the contour with ``fury.actor.contour_from_roi``, sets the
-        alpha blend mode, and disables depth writing when opacity is below
-        100%.
+        Builds the contour with ``fury.actor.contour_from_roi``, or a smoothed
+        contour when :attr:`smoothing` is positive, sets the alpha blend mode,
+        and disables depth writing when opacity is below 100%.
         """
-        self._roi_surface = contour_from_roi(
-            self.roi, affine=self.affine, color=self.color, opacity=self.opacity / 100.0
-        )
+        if self.smoothing:
+            self._roi_surface = smooth_contour_from_roi(
+                self.roi,
+                affine=self.affine,
+                color=self.color,
+                opacity=self.opacity / 100.0,
+                iterations=self.smoothing,
+            )
+        else:
+            self._roi_surface = contour_from_roi(
+                self.roi,
+                affine=self.affine,
+                color=self.color,
+                opacity=self.opacity / 100.0,
+            )
         for actor in self._roi_surface.children:
+            # FURY stores the opacity in both the color alpha and the material;
+            # keep it on the material only, where ``_set_opacity`` changes it.
+            actor.material.color = (*self.color[:3], 1.0)
             actor.material.alpha_mode = "blend"
             if self.opacity < 100:
                 actor.material.depth_write = False

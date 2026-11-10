@@ -47,6 +47,7 @@ imgui_bundle, has_imgui, _ = optional_package(
 )
 if has_imgui:
     imgui = imgui_bundle.imgui
+    icons_fontawesome_6 = imgui_bundle.icons_fontawesome_6
 
 
 def create_image_visualization(
@@ -173,6 +174,7 @@ class Image3D(Visualization):
         value_percentiles=(2, 98),
         colormap="Gray",
         sync_callabck=None,
+        transparent_background=False,
     ):
         """Initialize the volume slicer visualization.
 
@@ -200,6 +202,8 @@ class Image3D(Visualization):
             Colormap used for scalar volumes; ignored when ``rgb`` is True.
         sync_callabck : callable, optional
             Callback used to synchronize state across views.
+        transparent_background : bool, optional
+            Draw the darkest tenth of the intensity range as transparent.
         """
         self._img = (
             volume if isinstance(volume, nib.spatialimages.SpatialImage) else None
@@ -250,9 +254,11 @@ class Image3D(Visualization):
             "Divergent",
         )
         self.colormap = colormap
+        self.transparent_background = transparent_background
         self._picked_voxel = None
         self._picked_intensity = None
         self._pick_callback = None
+        self._glass_callback = None
         self._press = None
         self._slice_visibility = [True, True, True]
         self._synchronize = True
@@ -408,11 +414,7 @@ class Image3D(Visualization):
         """
         self.colormap = colormap
         self.value_range = self._value_range_from_percentile(self.active_volume)
-        if self.colormap.lower() == "gray":
-            for actor in self._slicer.children:
-                actor.material.map = None
-                actor.material.clim = self.value_range
-        elif self.colormap.lower() == "divergent":
+        if self.colormap.lower() == "divergent":
             map_colors = np.array([[0, 0, 1], [1, 0, 0]], dtype=np.float32)
             map = gfx.cm.create_colormap(map_colors, n=2)
             max_abs = np.max(np.abs(self.active_volume))
@@ -434,9 +436,58 @@ class Image3D(Visualization):
                 self.interpolation = "nearest"
                 actor.material.clim = self.value_range
         else:
+            map = self._scalar_colormap()
             for actor in self._slicer.children:
-                actor.material.map = getattr(gfx.cm, self.colormap.lower())
+                actor.material.map = map
                 actor.material.clim = self.value_range
+
+    def _is_label_colormap(self):
+        """Return whether the active colormap is Divergent or Distinct.
+
+        Returns
+        -------
+        bool
+            True for the colormaps that render labels or signs.
+        """
+        return self._is_divergent_colormap() or self._is_distinct_colormap()
+
+    def _scalar_colormap(self):
+        """Build the texture map of a scalar colormap.
+
+        Returns
+        -------
+        fury.lib.TextureMap or None
+            ``None`` for opaque Gray, which the material renders natively.
+            With :attr:`transparent_background`, the darkest tenth of the
+            colors is fully transparent.
+        """
+        if self.colormap.lower() == "gray":
+            if not self.transparent_background:
+                return None
+            colors = np.repeat(np.linspace(0, 1, 256, dtype=np.float32)[:, None], 4, 1)
+            colors[:, 3] = 1
+        else:
+            colors = np.array(getattr(gfx.cm, self.colormap.lower()).texture.data)
+        if self.transparent_background:
+            colors[: len(colors) // 10, 3] = 0
+        return gfx.cm.create_colormap(colors, n=len(colors))
+
+    def set_transparent_background(self, enabled):
+        """Show or hide the darkest voxels of the slices.
+
+        Voxels in the lowest tenth of the intensity range become transparent.
+        This removes the dark frame around the head and the soft dark rim of
+        skull-stripped images, so slices float over white or transparent
+        figure backgrounds.
+
+        Parameters
+        ----------
+        enabled : bool
+            Whether those voxels are transparent.
+        """
+        self.transparent_background = bool(enabled)
+        self._apply_colormap(self.colormap)
+        self.render()
 
     @property
     def actor(self):
@@ -622,6 +673,7 @@ class Image3D(Visualization):
             self._render_direction_control()
         imgui.spacing()
         self._render_colormap_control()
+        self._render_figure_controls()
         imgui.spacing()
         self._render_voxel_info()
         imgui.spacing()
@@ -750,6 +802,27 @@ class Image3D(Visualization):
         )
         if colormap_changed:
             self.apply_scene_op(self._apply_colormap, new_cmap)
+
+    def _render_figure_controls(self):
+        """Draw the transparent background toggle and the glass brain action."""
+        if not self.rgb and not self._is_label_colormap():
+            changed, new = toggle_button(
+                self.transparent_background, label="Transparent background"
+            )
+            if changed:
+                self.apply_scene_op(self.set_transparent_background, new)
+        if self._glass_callback is None:
+            return
+        icon = icons_fontawesome_6.ICON_FA_BRAIN
+        imgui.text_colored(THEME["primary"], f"{icon}  Glass brain")
+        if imgui.is_item_hovered():
+            imgui.set_mouse_cursor(imgui.MouseCursor_.hand)
+            imgui.set_tooltip(
+                "Add a translucent shell of this brain to show activation "
+                "and tracts inside it"
+            )
+        if imgui.is_item_clicked():
+            self.apply_scene_op(self._glass_callback, image=self)
 
     def _render_voxel_info(self):
         """Draw the picked voxel index and its intensity."""

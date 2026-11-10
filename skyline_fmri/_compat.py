@@ -8,18 +8,25 @@ from functools import partial
 
 import nibabel as nib
 import numpy as np
+from scipy import sparse
 
 from dipy.utils.optpkg import optional_package
 
 fury, has_fury, _ = optional_package("fury", min_version="2.1.0")
 if has_fury:
-    from fury.actor import Group, create_axes_helper
-    from fury.colormap import create_colormap as fury_create_colormap, hsv2rgb
+    from fury.actor import Group, create_axes_helper, surface
+    from fury.colormap import (
+        create_colormap as fury_create_colormap,
+        hsv2rgb,
+        normalize_colors,
+    )
     from fury.lib import EventType
+    from fury.utils import apply_affine, voxel_mesh_by_object
     from fury.window import update_camera
 else:
-    Group = create_axes_helper = fury_create_colormap = hsv2rgb = fury
-    EventType = update_camera = fury
+    Group = create_axes_helper = surface = fury_create_colormap = hsv2rgb = fury
+    normalize_colors = EventType = apply_affine = voxel_mesh_by_object = fury
+    update_camera = fury
 
 _RGB_FIELD_NAMES = frozenset({("R", "G", "B"), ("R", "G", "B", "A")})
 
@@ -348,3 +355,160 @@ def gizmo(
         _sync_gizmo, 0.016, True, name, parts, target_screen.camera
     )
     return anchor
+
+
+def _taubin_smooth(vertices, faces, iterations, *, lam=0.5, mu=-0.53):
+    """Smooth a triangle mesh with Taubin (shrink-free) Laplacian smoothing.
+
+    Parameters
+    ----------
+    vertices : ndarray, shape (N, 3)
+        Mesh vertices.
+    faces : ndarray, shape (M, 3)
+        Triangle vertex indices.
+    iterations : int
+        Number of smoothing passes.
+    lam : float, optional
+        Positive (shrinking) step.
+    mu : float, optional
+        Negative (inflating) step, slightly larger in magnitude than ``lam``.
+
+    Returns
+    -------
+    ndarray, shape (N, 3)
+        Smoothed vertices.
+    """
+    n_vertices = len(vertices)
+    rows = faces[:, [0, 1, 2, 1, 2, 0]].ravel()
+    cols = faces[:, [1, 2, 0, 0, 1, 2]].ravel()
+    adjacency = sparse.coo_matrix(
+        (np.ones(len(rows)), (rows, cols)), shape=(n_vertices, n_vertices)
+    ).tocsr()
+    adjacency.data[:] = 1
+    neighbor_mean = sparse.diags(1 / np.ravel(adjacency.sum(axis=1))) @ adjacency
+
+    smoothed = np.array(vertices, dtype=float)
+    for _ in range(iterations):
+        smoothed += lam * (neighbor_mean @ smoothed - smoothed)
+        smoothed += mu * (neighbor_mean @ smoothed - smoothed)
+    return smoothed
+
+
+def contour_from_roi(
+    data,
+    *,
+    affine=None,
+    color=(1, 0, 0),
+    opacity=0.5,
+    material="phong",
+    iterations=20,
+):
+    """Generate a smooth surface actor from a binary ROI.
+
+    Parameters
+    ----------
+    data : ndarray, shape (X, Y, Z)
+        ROI volume; voxels with a value above zero are displayed.
+    affine : ndarray, shape (4, 4), optional
+        Affine mapping voxel coordinates to world coordinates.
+    color : str, tuple, list or ndarray, optional
+        Contour color (hex string, RGB in [0, 1] or in [0, 255]).
+    opacity : float, optional
+        Opacity from 0 (transparent) to 1 (opaque).
+    material : str, optional
+        Material of the contour mesh, as accepted by :func:`fury.actor.surface`
+        (``"phong"``, ``"basic"``, ``"standard"``, ``"physical"``).
+    iterations : int, optional
+        Number of smoothing passes. Use 0 to keep the blocky voxel surface.
+
+    Returns
+    -------
+    Group
+        One surface actor per connected object of the ROI.
+
+    Notes
+    -----
+    Overrides :func:`fury.actor.contour_from_roi`, which draws staircased voxel
+    faces. The surface is smoothed with Taubin smoothing, which does not shrink
+    the ROI, and shaded with per-vertex normals so it does not look faceted.
+    """
+    color = normalize_colors(color)[0][:3]
+    inside = np.asarray(data) > 0
+    contour = Group()
+    for mesh in voxel_mesh_by_object(data, triangulate=True).values():
+        faces = _outward_faces(mesh["verts"], mesh["faces"], inside)
+        # FURY puts voxel i between i and i + 1; voxel centers are at i.
+        vertices = _taubin_smooth(mesh["verts"] - 0.5, faces, iterations)
+        if affine is not None:
+            vertices = apply_affine(affine, vertices)
+            if np.linalg.det(np.asarray(affine)[:3, :3]) < 0:
+                faces = faces[:, ::-1]
+        actor = surface(
+            vertices,
+            faces,
+            colors=color,
+            opacity=opacity,
+            material=material,
+            normals=vertex_normals(vertices, faces),
+        )
+        actor.material.flat_shading = False
+        contour.add(actor)
+    return contour
+
+
+def _outward_faces(vertices, faces, inside):
+    """Wind the triangles of a voxel surface so their normals point outward.
+
+    Parameters
+    ----------
+    vertices : ndarray, shape (N, 3)
+        Voxel-corner vertices, voxel ``i`` spanning ``[i, i + 1]``.
+    faces : ndarray, shape (M, 3)
+        Triangle vertex indices.
+    inside : ndarray of bool, shape (X, Y, Z)
+        Voxels enclosed by the surface.
+
+    Returns
+    -------
+    ndarray, shape (M, 3)
+        Faces, reversed where their normal pointed into ``inside``.
+    """
+    faces = np.array(faces)
+    corners = np.asarray(vertices, dtype=np.float64)[faces]
+    normals = np.cross(corners[:, 1] - corners[:, 0], corners[:, 2] - corners[:, 0])
+    normals /= np.maximum(np.linalg.norm(normals, axis=1, keepdims=True), 1e-12)
+    probe = np.floor(corners.mean(axis=1) + 0.5 * normals).astype(int)
+    valid = np.all((probe >= 0) & (probe < inside.shape), axis=1)
+    inward = np.zeros(len(faces), dtype=bool)
+    inward[valid] = inside[tuple(probe[valid].T)]
+    faces[inward] = faces[inward][:, ::-1]
+    return faces
+
+
+def vertex_normals(vertices, faces):
+    """Compute area-weighted unit normals at the vertices of a triangle mesh.
+
+    Parameters
+    ----------
+    vertices : ndarray, shape (N, 3)
+        Mesh vertices.
+    faces : ndarray, shape (M, 3)
+        Triangle vertex indices.
+
+    Returns
+    -------
+    ndarray, shape (N, 3)
+        Unit normals, following the winding of ``faces``; zero for vertices
+        without a face.
+    """
+    vertices = np.asarray(vertices, dtype=np.float64)
+    faces = np.asarray(faces)
+    corners = vertices[faces]
+    face_normals = np.cross(
+        corners[:, 1] - corners[:, 0], corners[:, 2] - corners[:, 0]
+    )
+    normals = np.zeros_like(vertices)
+    for k in range(3):
+        np.add.at(normals, faces[:, k], face_normals)
+    length = np.linalg.norm(normals, axis=1, keepdims=True)
+    return (normals / np.where(length > 0, length, 1)).astype(np.float32)

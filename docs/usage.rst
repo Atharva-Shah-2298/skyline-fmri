@@ -301,7 +301,7 @@ surface, ::
 
 Each surface has an *Opacity* slider. ``--glass_brain`` draws surfaces as dark
 translucent shells on a white background, which is useful for showing
-tractograms inside the brain. ::
+tractograms inside the brain (see `Glass Brains`_ for the fMRI view). ::
 
   skyline_fmri lh.pial --glass_brain
 
@@ -429,6 +429,26 @@ only; switch their *Line Type* to *Line* to see them in the 2D views too
 (``--performance_version`` draws every tractogram as lines).
 
 
+------------
+Glass Brains
+------------
+
+A glass brain shows activation and tracts inside a translucent brain. With
+``--glass_brain``, Skyline builds a smooth shell from the first anatomical
+image, adds the kept clusters of every activation map as 3D surfaces (orange
+for positive, blue for negative values) and hides the slices. ::
+
+  skyline_fmri T1w_brain.nii.gz bundles/ --stat_maps zstat1.nii.gz --glass_brain
+
+The shell is cut from the image with Otsu's threshold: a skull-stripped image
+gives a brain, a full-head image gives the head. From the sidebar, *Glass
+brain* in an image's controls adds the shell, and *3D clusters* under an
+activation map's cluster table adds its clusters; click it again after
+changing the threshold to update them. Both are listed with the ROIs, where
+their opacity and color can be changed. From Python, use
+``viewer.add_glass_brain()`` and ``viewer.add_activation_blobs()``.
+
+
 ---------------
 Capture Figures
 ---------------
@@ -448,6 +468,11 @@ The camera button opens *Capture Figure*:
 The views are rendered again offscreen, so the sidebar and the time-series
 panel are not in the image. From Python, ``viewer.capture_figure("fig.png",
 scale=4, background="white", panels=True)`` does the same.
+
+On white or transparent backgrounds, turn on *Transparent background* in an
+image's controls. It hides the darkest tenth of the intensity range, which
+removes the black frame around the head so the slices float on the page.
+Skull-stripped images give the cleanest outline.
 
 
 

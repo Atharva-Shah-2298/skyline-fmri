@@ -103,8 +103,9 @@ class SkylineFMRIFlow(Workflow):
             This will render tractograms as lines instead of tubes,
             which can improve performance for large tractograms.
         glass_brain : bool, optional
-            Whether to use glass brain mode. This will overwrite the background color
-            to white if not explicitly set by the user.
+            Glass brain view: a translucent shell of the first image, activation
+            clusters as 3D surfaces and hidden slices. The background defaults
+            to white unless set explicitly.
         bg_color : variable float, optional
             Define the background color of the scene. Colors can be defined with
             3 values and should be between [0-1].

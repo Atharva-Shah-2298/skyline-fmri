@@ -1938,3 +1938,58 @@ def test_stat_maps_name_the_tracts_crossing_their_clusters(make_skyline):
     assert len(isolated.sft.streamlines) == 3
     # Isolated layers are not counted as atlas tracts again.
     assert [name for name, _, _ in stat.tracts_through] == ["AF_L.trk"]
+
+
+def _roi_names(viewer):
+    return [viz.name for viz in viewer._roi_visualizations]
+
+
+def test_add_glass_brain_adds_a_translucent_shell_once(make_skyline):
+    viewer = make_skyline(images=[_image_input("t1.nii.gz")])
+
+    shell = viewer.add_glass_brain()
+    viewer.add_glass_brain(opacity=30)
+
+    assert _roi_names(viewer) == ["ROI (Glass brain of t1)"]
+    replacement = viewer._roi_visualizations[0]
+    assert replacement is not shell and replacement.opacity == 30
+    assert replacement.smoothing > 0
+    assert replacement.actor in viewer.window.screens[0].scene.main_scene.children
+    assert shell.actor not in viewer.window.screens[0].scene.main_scene.children
+
+
+def test_add_glass_brain_needs_an_anatomical_image(make_skyline):
+    viewer = make_skyline(stat_maps=[_stat_input()])
+
+    with pytest.raises(ValueError, match="anatomical image"):
+        viewer.add_glass_brain()
+
+
+def test_add_activation_blobs_meshes_each_kept_tail(make_skyline):
+    stat, affine, name = _stat_input()
+    stat[5:7, 5:7, 5:7] = -6.0
+    viewer = make_skyline(images=[_image_input()], stat_maps=[(stat, affine, name)])
+
+    layers = viewer.add_activation_blobs()
+
+    assert [layer.name for layer in layers] == [
+        "ROI (zstat positive clusters)",
+        "ROI (zstat negative clusters)",
+    ]
+    npt.assert_array_equal(layers[0].roi, stat > 0)
+    npt.assert_array_equal(layers[1].roi, stat < 0)
+
+
+def test_glass_brain_mode_builds_shell_and_clusters_and_hides_slices(make_skyline):
+    viewer = make_skyline(
+        images=[_image_input("t1.nii.gz")],
+        stat_maps=[_stat_input()],
+        glass_brain=True,
+    )
+
+    assert _roi_names(viewer) == [
+        "ROI (Glass brain of t1)",
+        "ROI (zstat positive clusters)",
+    ]
+    for viz in viewer._image_visualizations:
+        assert viz._slice_visibility == [False, False, False]

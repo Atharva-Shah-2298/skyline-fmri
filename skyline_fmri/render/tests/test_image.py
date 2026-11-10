@@ -673,3 +673,24 @@ def test_image3d_slice_slider_value_maps_to_world_state():
 
     npt.assert_allclose(image.state, (18.0, 22.0, 45.0))
     npt.assert_allclose(displayed_state, slider_state)
+
+
+@pytest.mark.parametrize("colormap", ["Gray", "Viridis"])
+def test_image3d_transparent_background_hides_the_darkest_tenth(colormap):
+    image = _image(colormap=colormap, transparent_background=True)
+    for material in _materials(image):
+        alpha = material.map.texture.data[:, 3]
+        npt.assert_array_equal(alpha[:25], 0)
+        npt.assert_array_equal(alpha[25:], 1)
+        npt.assert_allclose(material.clim, image.value_range)
+
+
+def test_image3d_transparent_background_survives_colormap_changes():
+    image = _image()
+    image.set_transparent_background(True)
+    image._apply_colormap("Hot")
+    assert all(m.map.texture.data[0, 3] == 0 for m in _materials(image))
+    image.set_transparent_background(False)
+    assert all(m.map.texture.data[0, 3] == 1 for m in _materials(image))
+    image._apply_colormap("Gray")
+    assert all(m.map is None for m in _materials(image))

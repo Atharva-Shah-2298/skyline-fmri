@@ -1,4 +1,5 @@
 import numpy as np
+import numpy.testing as npt
 import pytest
 
 from dipy.utils.optpkg import optional_package
@@ -163,3 +164,24 @@ def test_roi3d_keeps_its_constructor_color():
     assert viz._draft_color == (0.0, 0.5, 1.0)
     assert viz._color_picker_open is False
     assert viz.viz_type == "roi"
+
+
+@pytest.mark.parametrize("smoothing", [0, 15])
+def test_roi3d_applies_partial_opacity_once(smoothing):
+    roi = ROI3D("roi", _binary_roi(), affine=np.eye(4), opacity=40, smoothing=smoothing)
+    for actor in roi.actor.children:
+        assert actor.material.color.a == 1.0
+        npt.assert_allclose(actor.material.opacity, 0.4)
+
+
+def test_roi3d_smoothing_moves_vertices_off_the_voxel_grid():
+    blocky = ROI3D("roi", _binary_roi(), affine=np.eye(4))
+    smooth = ROI3D("roi", _binary_roi(), affine=np.eye(4), smoothing=20)
+
+    def positions(roi):
+        return np.concatenate(
+            [actor.geometry.positions.data for actor in roi.actor.children]
+        )
+
+    assert np.allclose(positions(blocky) * 2, np.round(positions(blocky) * 2))
+    assert not np.allclose(positions(smooth) * 2, np.round(positions(smooth) * 2))

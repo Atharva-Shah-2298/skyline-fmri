@@ -24,6 +24,7 @@ from skyline_fmri.fmri import (
     seed_correlation,
     voxel_from_world,
 )
+from skyline_fmri.glass import brain_mask, cluster_masks
 from skyline_fmri.io import _valid_shm_coeffs, _validate_sh_basis, load_files
 from skyline_fmri.tracts import (
     TractIndex,
@@ -239,8 +240,9 @@ class Skyline:
         Whether to render tractograms as ``"Line"`` instead of ``"Tube"``,
         which improves performance for large tractograms.
     glass_brain : bool, optional
-        Whether to render surfaces black with the ``"basic"`` material at
-        25% opacity and default the background to white.
+        Glass brain view: a translucent shell of the first anatomical
+        image, activation clusters as 3D surfaces, hidden slices, surfaces
+        drawn black at 25% opacity and a white default background.
     bg_color : tuple of float, optional
         Background color of the scene as an RGB tuple in ``[0, 1]``. If
         None, it is white when ``glass_brain`` is True, otherwise dark
@@ -409,8 +411,9 @@ class Skyline:
             Whether to render tractograms as ``"Line"`` instead of ``"Tube"``,
             which improves performance for large tractograms.
         glass_brain : bool, optional
-            Whether to render surfaces black with the ``"basic"`` material at
-            25% opacity and default the background to white.
+            Glass brain view: a translucent shell of the first anatomical
+            image, activation clusters as 3D surfaces, hidden slices, surfaces
+            drawn black at 25% opacity and a white default background.
         bg_color : tuple of float, optional
             Background color of the scene as an RGB tuple in ``[0, 1]``. If
             None, it is white when ``glass_brain`` is True, otherwise dark
@@ -1205,6 +1208,11 @@ class Skyline:
                 self.window._screen_config, self.window.renderer.logical_size
             ),
         )
+        # ``update_viewports`` fits every camera to the scene's bounding sphere;
+        # the 2D views are framed on the images instead.
+        if self._layout == "triplanar":
+            for view in self._planar_views:
+                self._frame_planar_view(view)
 
     @property
     def layout(self):
@@ -1279,25 +1287,52 @@ class Skyline:
         from fury.window import Screen
 
         scene = self.window.screens[0].scene
-        center = self._scene_center()
         views = []
         for name, axis, up, letters in _PLANAR_VIEWS:
             camera = gfx.OrthographicCamera()
-            camera.world.reference_up = up
-            direction = np.zeros(3)
-            direction[axis] = _PLANAR_SIDES[axis]
-            camera.world.position = center + direction * 500.0
-            camera.look_at(center)
             viewport = _SlabViewport(self.window.renderer, self, axis)
             controller = gfx.PanZoomController(camera, register_events=viewport)
-            views.append(
-                {
-                    "name": name,
-                    "screen": Screen(viewport, scene, camera, controller),
-                    "letters": letters,
-                }
-            )
+            view = {
+                "name": name,
+                "screen": Screen(viewport, scene, camera, controller),
+                "letters": letters,
+                "axis": axis,
+                "up": up,
+            }
+            self._frame_planar_view(view)
+            views.append(view)
         return views
+
+    def _frame_planar_view(self, view):
+        """Point a 2D view at its slice plane and fit the data in it.
+
+        Parameters
+        ----------
+        view : dict
+            Entry of ``self._planar_views``.
+        """
+        bounds = [np.asarray(viz.bounds) for viz in self._image_visualizations]
+        if not bounds:
+            bbox = self.window.screens[0].scene.main_scene.get_world_bounding_box()
+            bounds = [np.asarray(bbox)] if bbox is not None else []
+        bounds = [b for b in bounds if np.isfinite(b).all()]
+        if bounds:
+            low = np.min([b[0] for b in bounds], axis=0)
+            high = np.max([b[1] for b in bounds], axis=0)
+            extent, center = high - low, (low + high) / 2
+        else:
+            extent, center = np.full(3, 200.0), self._scene_center()
+        axis, up = view["axis"], view["up"]
+        vertical = int(np.argmax(np.abs(up)))
+        horizontal = 3 - axis - vertical
+        camera = view["screen"].camera
+        camera.width = max(float(extent[horizontal]), 1.0) * 1.04
+        camera.height = max(float(extent[vertical]), 1.0) * 1.04
+        camera.world.reference_up = up
+        direction = np.zeros(3)
+        direction[axis] = _PLANAR_SIDES[axis]
+        camera.world.position = center + direction * 500.0
+        camera.look_at(center)
 
     def _slab_objects(self):
         """Split visible tract, surface and ROI objects for the 2D views.
@@ -1651,6 +1686,131 @@ class Skyline:
             {"tractograms": [(sft, label)], "keep_camera": True},
             message="Isolating tract...",
         )
+
+    def _anatomical_images(self):
+        """Return the loaded images that are neither BOLD runs nor stat maps."""
+        return [
+            viz
+            for viz in self._image_visualizations
+            if not isinstance(viz, (Functional4D, StatMap3D))
+        ]
+
+    def _add_surface_layer(self, viz):
+        """Register a generated surface layer, replacing one of the same name."""
+        for old in [v for v in self._roi_visualizations if v.name == viz.name]:
+            if self.UI_window is not None:
+                self.UI_window.remove(f"{old.path}:{old.name}")
+            self._remove_visualization(old)
+        self._add_visualization(viz)
+        self._refresh_actors()
+        self.request_refresh()
+
+    def add_glass_brain(
+        self, *, image=None, opacity=12, color=(0.75, 0.78, 0.84), smoothing=30
+    ):
+        """Add a translucent shell of a brain to see activation and tracts inside.
+
+        The shell is the smoothed surface of :func:`skyline_fmri.glass.brain_mask`
+        and is listed with the ROIs, where its opacity and color can be changed.
+
+        Parameters
+        ----------
+        image : Image3D, optional
+            Anatomical image the shell is built from; the first loaded one
+            when omitted.
+        opacity : int, optional
+            Shell opacity in percent.
+        color : tuple of float, optional
+            Shell RGB color in ``[0, 1]``.
+        smoothing : int, optional
+            Taubin smoothing passes of the shell surface.
+
+        Returns
+        -------
+        ROI3D
+            The shell layer.
+
+        Raises
+        ------
+        ValueError
+            If no anatomical image is loaded.
+        """
+        if image is None:
+            anatomy = self._anatomical_images()
+            if not anatomy:
+                raise ValueError("Load an anatomical image to build a glass brain.")
+            image = anatomy[0]
+        mask = brain_mask(image.active_volume).astype(np.uint8)
+        viz = ROI3D(
+            f"Glass brain of {Path(image.path).name.split('.')[0]}",
+            mask,
+            affine=image.affine,
+            opacity=opacity,
+            color=color,
+            smoothing=smoothing,
+            render_callback=self.request_refresh,
+        )
+        self._add_surface_layer(viz)
+        return viz
+
+    def add_activation_blobs(self, *, stat_map=None, smoothing=20):
+        """Add the kept clusters of statistical maps as smooth 3D surfaces.
+
+        Positive clusters are orange and negative clusters blue. The surfaces
+        follow the threshold and minimum cluster size at the time of the call;
+        calling again replaces them.
+
+        Parameters
+        ----------
+        stat_map : StatMap3D, optional
+            Overlay whose kept clusters are meshed; every loaded map when
+            omitted.
+        smoothing : int, optional
+            Taubin smoothing passes of the cluster surfaces.
+
+        Returns
+        -------
+        list of ROI3D
+            One layer per non-empty tail and map.
+        """
+        maps = self._stat_map_visualizations if stat_map is None else [stat_map]
+        layers = []
+        for overlay in maps:
+            stem = Path(overlay.path).name.split(".")[0]
+            for sign, mask, color in cluster_masks(overlay.dwi):
+                viz = ROI3D(
+                    f"{stem} {sign} clusters",
+                    mask.astype(np.uint8),
+                    affine=overlay.affine,
+                    color=color,
+                    smoothing=smoothing,
+                    render_callback=self.request_refresh,
+                )
+                self._add_surface_layer(viz)
+                layers.append(viz)
+        return layers
+
+    def _apply_glass_brain(self, *, images, stat_maps):
+        """Build the glass brain views requested by ``glass_brain=True``.
+
+        Parameters
+        ----------
+        images : bool
+            Whether the batch added images; the first anatomy gets a shell and
+            its slices are hidden.
+        stat_maps : list or None
+            Statistical maps of the batch; each gets 3D clusters and its
+            slices are hidden.
+        """
+        anatomy = self._anatomical_images()
+        if images and anatomy:
+            self.add_glass_brain(image=anatomy[0])
+            for viz in anatomy:
+                viz.set_slice_visibility([False, False, False])
+        if stat_maps:
+            for stat_map in self._stat_map_visualizations[-len(stat_maps) :]:
+                self.add_activation_blobs(stat_map=stat_map)
+                stat_map.set_slice_visibility([False, False, False])
 
     def _cursor_lines(self):
         """Return the cursor readout: position, overlay values and nearby tracts."""
@@ -2046,9 +2206,7 @@ class Skyline:
                     self.window.screens[0].scene,
                 )
                 for view in self._planar_views:
-                    update_camera(
-                        view["screen"].camera, None, self.window.screens[0].scene
-                    )
+                    self._frame_planar_view(view)
             # The stacking direction depends on where the camera now is.
             self.active_image and self._arrange_image_actors()
 
@@ -2165,6 +2323,10 @@ class Skyline:
         viz._scene_op_callback = self.enqueue_scene_op
         if isinstance(viz, Image3D):
             viz._pick_callback = self._on_pick
+        if isinstance(viz, StatMap3D):
+            viz._blobs_callback = self.add_activation_blobs
+        elif isinstance(viz, Image3D) and not isinstance(viz, Functional4D):
+            viz._glass_callback = self.add_glass_brain
         if self.UI_window is not None:
             self.UI_window.add(viz_id, viz.renderer, viz_type=viz.viz_type)
 
@@ -2346,7 +2508,8 @@ class Skyline:
         self._show_activity(self._functional_visualizations)
         if tractograms:
             self._on_tracts_changed()
-
+        if self._glass_brain:
+            self._apply_glass_brain(images=bool(images), stat_maps=stat_maps)
         if self._image_visualizations:
             self._image_visualizations[-1].active = True
             self.active_image = self._image_visualizations[-1]
@@ -2784,8 +2947,9 @@ def skyline_from_files(
         Whether to render tractograms as ``"Line"`` instead of ``"Tube"``,
         which improves performance for large tractograms.
     glass_brain : bool, optional
-        Whether to render surfaces black with the ``"basic"`` material at
-        25% opacity and default the background to white.
+        Glass brain view: a translucent shell of the first anatomical
+        image, activation clusters as 3D surfaces, hidden slices, surfaces
+        drawn black at 25% opacity and a white default background.
     bg_color : tuple of float, optional
         Background color of the scene as an RGB tuple in ``[0, 1]``. If
         None, it is white when ``glass_brain`` is True, otherwise dark
@@ -2973,8 +3137,9 @@ def skyline(
         Whether to render tractograms as ``"Line"`` instead of ``"Tube"``,
         which improves performance for large tractograms.
     glass_brain : bool, optional
-        Whether to render surfaces black with the ``"basic"`` material at
-        25% opacity and default the background to white.
+        Glass brain view: a translucent shell of the first anatomical
+        image, activation clusters as 3D surfaces, hidden slices, surfaces
+        drawn black at 25% opacity and a white default background.
     bg_color : tuple of float, optional
         Background color of the scene as an RGB tuple in ``[0, 1]``. If
         None, it is white when ``glass_brain`` is True, otherwise dark

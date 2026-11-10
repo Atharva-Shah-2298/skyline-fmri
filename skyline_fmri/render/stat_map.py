@@ -338,6 +338,7 @@ class StatMap3D(Image3D):
         self._navigate_callback = navigate_callback
         self._tract_provider = tract_provider
         self._isolate_callback = isolate_callback
+        self._blobs_callback = None
         self._clusters_due = None
         self.tract_overlap = {}
         self.tracts_through = []
@@ -541,6 +542,7 @@ class StatMap3D(Image3D):
         self.draw_colorbar(imgui.get_window_draw_list())
         imgui.spacing()
         self._render_cluster_table()
+        self._render_blobs_action()
         if self.tracts_through:
             imgui.spacing()
             self._render_tract_table()
@@ -598,6 +600,20 @@ class StatMap3D(Image3D):
         if changed:
             self.min_cluster_size = int(value)
             self._schedule_relabel()
+
+    def _render_blobs_action(self):
+        """Draw the action that adds the kept clusters as 3D surfaces."""
+        if self._blobs_callback is None or not self.clusters:
+            return
+        icon = icons_fontawesome_6.ICON_FA_CUBES
+        imgui.text_colored(THEME["primary"], f"{icon}  3D clusters")
+        if imgui.is_item_hovered():
+            imgui.set_mouse_cursor(imgui.MouseCursor_.hand)
+            imgui.set_tooltip(
+                "Add the kept clusters as smooth surfaces, for glass brain views"
+            )
+        if imgui.is_item_clicked():
+            self.apply_scene_op(self._blobs_callback, stat_map=self)
 
     def _render_cluster_table(self):
         """List the strongest clusters; selecting a row jumps to its peak."""
