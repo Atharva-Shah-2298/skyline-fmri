@@ -1,0 +1,42 @@
+exclude: ".svg|.css"
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+      - id: trailing-whitespace
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.12
+    hooks:
+      - id: ruff-check
+        args: ["--fix", "--show-fixes"]
+      - id: ruff-format
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.4.2
+    hooks:
+      - id: codespell
+        args: ["--ignore-words-list", "indx" ]
+  - repo: https://github.com/pre-commit/pygrep-hooks
+    rev: v1.10.0
+    hooks:
+      - id: rst-backticks
+      - id: rst-directive-colons
+      - id: rst-inline-touching-normal
+  - repo: local
+    hooks:
+      - id: enforce-pep3102-defaults
+        name: Enforce keyword-only default arguments (PEP 3102)
+        entry: python tools/check_pep3102.py
+        language: python
+        types: [python]
+        # The CLI exposes ``run`` parameters through IntrospectiveArgumentParser,
+        # which needs them positional-or-keyword.
+        exclude: ^(skyline_fmri/cli\.py|skyline_fmri/(.*/)?tests/)
+      - id: skyline-commit-msg
+        name: skyline-commit-msg
+        entry: tools/hooks/commit-msg.py
+        language: python
+        stages: [commit-msg]

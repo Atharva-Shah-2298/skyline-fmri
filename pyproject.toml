@@ -1,0 +1,48 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "skyline-fmri"
+version = "0.1.0"
+description = "fMRI activation, anatomy and white-matter tracts in one viewer, with publication-ready figure capture"
+readme = "README.md"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
+authors = [{ name = "Atharva Shah" }]
+requires-python = ">=3.12"
+keywords = ["fMRI", "diffusion MRI", "tractography", "visualization", "neuroimaging"]
+classifiers = [
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+    "Topic :: Scientific/Engineering :: Visualization",
+]
+dependencies = [
+    "dipy>=1.12.1",
+    "fury>=2.1.0",
+    "imgui_bundle>=1.92.600,<=1.92.801",
+    "glfw",
+    "nibabel>=3.0",
+    "numpy>=1.22",
+    "scipy>=1.8",
+    "pillow",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8", "pytest-xdist"]
+
+[project.scripts]
+skyline_fmri = "skyline_fmri.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Atharva-Shah-2298/skyline-fmri"
+Source = "https://github.com/Atharva-Shah-2298/skyline-fmri"
+
+[tool.hatch.build.targets.sdist]
+include = ["skyline_fmri", "docs", "README.md", "LICENSE", "CITATION.cff"]
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore:.*'where' used without 'out'.*:UserWarning:fury.colormap",
+]

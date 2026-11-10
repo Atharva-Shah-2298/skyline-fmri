@@ -1,0 +1,36 @@
+line-length = 88
+force-exclude = true
+extend-exclude = ["__pycache__", "build"]
+
+[lint]
+extend-select = [
+  "B",
+  "C4",
+  "ISC",
+  "FLY",
+  "I",
+  "C90",
+  "PERF",
+  "W",
+  "UP",
+  "FURB",
+]
+ignore = [
+  "B905",
+  "C901",
+  "F811",
+  "FURB171",
+]
+
+[lint.isort]
+case-sensitive = true
+combine-as-imports = true
+force-sort-within-sections = true
+known-first-party = ["dipy", "skyline_fmri"]
+no-sections = false
+order-by-type = true
+relative-imports-order = "closest-to-furthest"
+section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
+
+[format]
+quote-style = "double"
