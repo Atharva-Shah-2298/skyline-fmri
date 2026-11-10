@@ -12,8 +12,8 @@
 
 ---
 
-Skyline fMRI is an interactive, GPU-accelerated viewer for functional, structural
-and diffusion MRI. It loads NIfTI images, BOLD runs, statistical maps,
+Skyline fMRI is an interactive, GPU-accelerated viewer for fMRI-structural
+coupled visualization. It loads NIfTI images, BOLD runs, statistical maps,
 tractograms, surfaces and ROIs into the same world space, and exports what
 you see at print resolution. Every figure on this page was made with it.
 
@@ -206,28 +206,40 @@ Every option is described in [`docs/usage.rst`](docs/usage.rst) and in
 
 ## Citing
 
-If Skyline fMRI helps your work, please cite it. GitHub's
-**Cite this repository** button gives the formatted entry from
-[`CITATION.cff`](CITATION.cff).
+If Skyline fMRI helps your work, please cite it together with DIPY and FURY,
+which it is built on. GitHub's **Cite this repository** button gives the
+formatted entries from [`CITATION.cff`](CITATION.cff).
 
 ```bibtex
 @software{shah2026skylinefmri,
   author  = {Shah, Atharva},
-  title   = {Skyline fMRI: functional, structural and diffusion MRI visualization},
+  title   = {Skyline fMRI: fMRI-structural coupled visualization},
   year    = {2026},
   url     = {https://github.com/Atharva-Shah-2298/skyline-fmri},
   version = {0.1.0}
 }
+
+@article{garyfallidis2014dipy,
+  author  = {Garyfallidis, Eleftherios and others},
+  title   = {DIPY, a library for the analysis of diffusion MRI data},
+  journal = {Frontiers in Neuroinformatics},
+  volume  = {8},
+  pages   = {8},
+  year    = {2014},
+  doi     = {10.3389/fninf.2014.00008}
+}
+
+@article{garyfallidis2021fury,
+  author  = {Garyfallidis, Eleftherios and others},
+  title   = {FURY: advanced scientific visualization},
+  journal = {Journal of Open Source Software},
+  volume  = {6},
+  number  = {64},
+  pages   = {3384},
+  year    = {2021},
+  doi     = {10.21105/joss.03384}
+}
 ```
-
-Skyline fMRI is built on DIPY and FURY; please also cite them:
-
-- Garyfallidis E. et al. *DIPY, a library for the analysis of diffusion MRI
-  data.* Frontiers in Neuroinformatics 8:8 (2014).
-  [doi:10.3389/fninf.2014.00008](https://doi.org/10.3389/fninf.2014.00008)
-- Garyfallidis E. et al. *FURY: advanced scientific visualization.* Journal of
-  Open Source Software 6(64):3384 (2021).
-  [doi:10.21105/joss.03384](https://doi.org/10.21105/joss.03384)
 
 ## Data in the figures
 

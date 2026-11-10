@@ -11,7 +11,7 @@ license = "BSD-3-Clause"
 license-files = ["LICENSE"]
 authors = [{ name = "Atharva Shah" }]
 requires-python = ">=3.12"
-keywords = ["fMRI", "diffusion MRI", "tractography", "visualization", "neuroimaging"]
+keywords = ["fMRI", "structural MRI", "tractography", "visualization", "neuroimaging"]
 classifiers = [
     "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3",

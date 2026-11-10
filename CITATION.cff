@@ -2,7 +2,7 @@ cff-version: 1.2.0
 message: >-
   If you use Skyline fMRI in your research, please cite it, together with the
   DIPY and FURY papers listed under references.
-title: "Skyline fMRI: functional, structural and diffusion MRI visualization"
+title: "Skyline fMRI: fMRI-structural coupled visualization"
 type: software
 authors:
   - family-names: Shah
@@ -21,7 +21,7 @@ abstract: >-
   transparent backgrounds.
 keywords:
   - fMRI
-  - diffusion MRI
+  - structural MRI
   - tractography
   - glass brain
   - visualization
